@@ -5,6 +5,7 @@ node_modules/
 outbound.db
 outbound.db-shm
 outbound.db-wal
+outbound.db.backup-*
 *.sqlite
 
 # Tunnel URL written at runtime

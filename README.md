@@ -103,23 +103,28 @@ implementation can be replaced without touching the engine or the routes.
 
 - Node.js 18 or newer (developed against Node 20)
 - npm
+- GNU Make (preinstalled on macOS and Linux; on Windows use `start_app.bat` or
+  the npm commands below, or `make` from WSL / Git Bash)
 
 `better-sqlite3` is a native module compiled for the machine it is installed on,
-so run `npm install` locally rather than copying a `node_modules` directory
+so install dependencies locally rather than copying a `node_modules` directory
 between operating systems.
 
-### Install and run
+### Quick start
 
 ```bash
 git clone https://github.com/Akash-gupta-N/volvo-outbound-.git
 cd volvo-outbound-
-npm install
-npm start
+make dev
 ```
 
-Then open <http://localhost:3000>. The SQLite file `outbound.db` and its tables
-are created automatically on first start, with the confirmation time defaulting
-to `17:00` IST.
+`make dev` installs dependencies and then starts the server. Nothing else to
+run. Open <http://localhost:3000>.
+
+The SQLite file `outbound.db` and its tables are created automatically on first
+start, with the confirmation time defaulting to `17:00` IST. The dependency
+install is tracked against `package.json`/`package-lock.json`, so the second
+`make dev` skips straight to starting the server.
 
 | Service | URL |
 | --- | --- |
@@ -131,16 +136,50 @@ The server binds to `0.0.0.0`, so any device on the same Wi-Fi can reach it, and
 it prints the detected LAN address on startup. `GET /api/system-info` returns the
 same information.
 
-On Windows, `start_app.bat` launches the server and the tunnel keep-alive and
-opens the dashboard in one double-click.
+### Make targets
+
+Run `make` with no arguments to list these at any time.
+
+| Target | What it does |
+| --- | --- |
+| `make dev` | Install dependencies, then run the server |
+| `make tunnel` | Keep a public HTTPS tunnel alive for phone scanning |
+| `make install` | Install dependencies only |
+| `make sample` | Regenerate `test_picklists.xlsx` |
+| `make test` | Engine tests — backs up and resets the database first |
+| `make test-api` | API integration tests — needs the server running |
+| `make test-persistence` | Restart-persistence check — needs `make test-api` first |
+| `make rebuild` | Rebuild `better-sqlite3` after copying `node_modules` across operating systems |
+| `make reset-db` | Back up and remove `outbound.db` |
+| `make clean` | Remove generated confirmation spreadsheets |
+| `make distclean` | Remove `node_modules` |
+
+`make reset-db` never deletes data outright: an existing `outbound.db` is moved
+to a timestamped `outbound.db.backup-*` file and the restore command is printed.
+
+### Windows
+
+`start_app.bat` launches the server and the tunnel keep-alive and opens the
+dashboard in one double-click, without needing make.
 
 ### Public tunnel (optional)
 
 The server opens a [localtunnel](https://localtunnel.me) on startup and prints a
-public HTTPS URL for the scanner. `keep_tunnel_alive.js` reconnects it if it
-drops and writes the current URL to `public_url.txt`. Useful for scanning from a
-phone that is not on the same network — and, because the tunnel is HTTPS with a
-real certificate, it is the least friction way to get the camera working.
+public HTTPS URL for the scanner. `make tunnel` runs `keep_tunnel_alive.js`,
+which reconnects it if it drops and writes the current URL to `public_url.txt`.
+Useful for scanning from a phone that is not on the same network — and, because
+the tunnel is HTTPS with a real certificate, it is the least friction way to get
+the camera working.
+
+### Without make
+
+```bash
+npm install                          # dependencies
+npm start                            # run the server
+node keep_tunnel_alive.js            # tunnel supervisor
+node create_sample_excel.js          # regenerate test_picklists.xlsx
+npm test                             # engine suite only
+```
 
 ## Scanning from a phone
 
@@ -204,6 +243,7 @@ generators still work:
 
 ```
 .
+├── Makefile                        # install / run / test targets
 ├── server.js                       # Express app, HTTP + HTTPS, Socket.IO, all routes
 ├── src/
 │   ├── config/timezone.js          # Luxon helpers pinned to Asia/Kolkata
@@ -285,19 +325,25 @@ Timestamps are stored as IST ISO strings with a `+05:30` offset, not UTC.
 The three suites are ordered and have prerequisites — they are not independent.
 
 ```bash
-# 1. Engine and service unit tests. Requires a FRESH database.
-rm -f outbound.db outbound.db-shm outbound.db-wal
-node tests/test_engine.js
+# 1. Engine and service unit tests. Needs a fresh database; the target backs up
+#    any existing outbound.db to a timestamped file before resetting it.
+make test
 
-# 2. API integration tests. Requires the server running, and seeds PL101/PL102.
-npm start          # in another terminal
-node tests/test_api_integration.js
+# 2. API integration tests. Need the server running, and seed PL101/PL102.
+make dev           # in another terminal
+make test-api
 
-# 3. Restart-persistence check. Requires step 2 to have run first.
-node tests/test_persistence.js
+# 3. Restart-persistence check. Needs step 2 to have run first.
+make test-persistence
 ```
 
-`npm test` runs only `tests/test_engine.js`.
+`make test-api` and `make test-persistence` check that the server is responding
+on port 3000 first and tell you to start it if not, rather than failing with a
+connection error.
+
+Without make, the equivalents are `node tests/test_engine.js` (after deleting
+`outbound.db`), `node tests/test_api_integration.js` and
+`node tests/test_persistence.js`. `npm test` runs only `tests/test_engine.js`.
 
 Coverage: picklist ingestion, line correction, QR encode/parse, out-of-sequence
 rejection, duplicate rejection, the full four-event happy path, live monitoring,
@@ -317,6 +363,8 @@ suite.
 The native binary was built for a different OS or architecture. Rebuild it:
 
 ```bash
+make rebuild
+# or, without make:
 rm -rf node_modules/better-sqlite3
 npm install better-sqlite3
 ```
@@ -339,8 +387,9 @@ Only picklists with *both* picking and packing completed are eligible. Already
 confirmed picklists have moved to history and will not reappear.
 
 **`test_engine.js` fails on a rejection-reason assertion**
-The database already contains completed picklists from an earlier run. Delete
-`outbound.db` and re-run — see [Testing](#testing).
+The database already contains completed picklists from an earlier run. Run
+`make test`, which backs up and resets the database first — see
+[Testing](#testing).
 
 ## Notes and limitations
 
