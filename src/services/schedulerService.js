@@ -1,3 +1,5 @@
+const fs = require('fs');
+const path = require('path');
 const { getISTNow, getISTISOString, formatISTDate } = require('../config/timezone');
 const { generateConfirmationExcel } = require('./excelService');
 
@@ -7,6 +9,11 @@ class SchedulerService {
     this.io = io;
     this.timer = null;
     this.lastRunDateMinute = null;
+    this.confirmationsDir = path.join(__dirname, '../../confirmations');
+
+    if (!fs.existsSync(this.confirmationsDir)) {
+      fs.mkdirSync(this.confirmationsDir, { recursive: true });
+    }
   }
 
   start() {
@@ -51,12 +58,37 @@ class SchedulerService {
     // Generate Excel buffer
     const excelBuffer = await generateConfirmationExcel(completedPicklists);
 
+    // Write the spreadsheet to disk before anything is marked CONFIRMED.
+    //
+    // The scheduled run has no HTTP response to stream into, so a buffer that
+    // is only returned is discarded by the caller. Picklists were being moved
+    // into history while the spreadsheet they were confirmed by disappeared,
+    // leaving no way to retrieve it. Saving first also means a write failure
+    // aborts the batch rather than confirming picklists with no artefact.
+    const batchId = `BATCH_${Date.now()}`;
+    const fileName = `Outbound_Confirmation_${confirmationTimestamp.replace(/[:.]/g, '-')}.xlsx`;
+    const filePath = path.join(this.confirmationsDir, fileName);
+    fs.writeFileSync(filePath, excelBuffer);
+
     // Update DB status to CONFIRMED
     const count = await this.repository.confirmPicklists(picklistNos, confirmationTimestamp, historyDate);
+
+    const batch = await this.repository.createConfirmationBatch({
+      batchId,
+      fileName,
+      filePath,
+      triggerType,
+      picklistCount: count,
+      createdAt: confirmationTimestamp
+    });
+
+    console.log(`[Scheduler] ${triggerType} confirmation batch ${batchId}: ${count} picklist(s) -> ${fileName}`);
 
     // Broadcast live dashboard update via WebSocket
     if (this.io) {
       this.io.emit('confirmationGenerated', {
+        batchId,
+        fileName,
         triggerType,
         count,
         timestamp: confirmationTimestamp
@@ -68,6 +100,7 @@ class SchedulerService {
       success: true,
       count,
       excelBuffer,
+      batch,
       picklistNos,
       confirmationTimestamp
     };

@@ -40,6 +40,15 @@ function initDatabase() {
       key TEXT PRIMARY KEY,
       value TEXT NOT NULL
     );
+
+    CREATE TABLE IF NOT EXISTS confirmation_batches (
+      batch_id TEXT PRIMARY KEY,
+      file_name TEXT NOT NULL,
+      file_path TEXT NOT NULL,
+      trigger_type TEXT NOT NULL,
+      picklist_count INTEGER NOT NULL,
+      created_at TEXT NOT NULL
+    );
   `);
 
   // Default confirmation time if not set: 17:00 IST (5:00 PM)

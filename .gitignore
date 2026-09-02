@@ -13,6 +13,8 @@ public_url.txt
 
 # Generated confirmation spreadsheets
 Outbound_Confirmation_*.xlsx
+confirmations/*
+!confirmations/.gitkeep
 
 # Environment
 .env

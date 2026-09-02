@@ -168,6 +168,45 @@ class SqliteRepository extends OutboundRepositoryInterface {
     return result.changes;
   }
 
+  async createConfirmationBatch({ batchId, fileName, filePath, triggerType, picklistCount, createdAt }) {
+    const stmt = db.prepare(`
+      INSERT INTO confirmation_batches (batch_id, file_name, file_path, trigger_type, picklist_count, created_at)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `);
+    stmt.run(batchId, fileName, filePath, triggerType, picklistCount, createdAt);
+    return this.getConfirmationBatchById(batchId);
+  }
+
+  async getConfirmationBatchById(batchId) {
+    const stmt = db.prepare(`
+      SELECT
+        batch_id AS batchId,
+        file_name AS fileName,
+        file_path AS filePath,
+        trigger_type AS triggerType,
+        picklist_count AS picklistCount,
+        created_at AS createdAt
+      FROM confirmation_batches
+      WHERE batch_id = ?
+    `);
+    return stmt.get(batchId) || null;
+  }
+
+  async getConfirmationBatches() {
+    const stmt = db.prepare(`
+      SELECT
+        batch_id AS batchId,
+        file_name AS fileName,
+        file_path AS filePath,
+        trigger_type AS triggerType,
+        picklist_count AS picklistCount,
+        created_at AS createdAt
+      FROM confirmation_batches
+      ORDER BY created_at DESC
+    `);
+    return stmt.all();
+  }
+
   async getHistoryRecords() {
     const stmt = db.prepare(`
       SELECT 

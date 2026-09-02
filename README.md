@@ -79,6 +79,10 @@ the wrong station.
   configured `HH:mm` IST, guarded so it runs at most once per minute.
 - Exports exactly six columns — Picklist No., Lines, Picking Start Time, Picking
   End Time, Package Start Time, Package End Time — with a styled header row.
+- Every batch is written to `confirmations/` and recorded, so a spreadsheet the
+  scheduler produced overnight can still be downloaded the next morning. The
+  file is saved before any picklist is marked confirmed, so a failed write
+  aborts the batch instead of confirming picklists with nothing to show for it.
 - Confirmed picklists leave the active list and move to permanent history, so
   they are never re-exported.
 
@@ -211,6 +215,11 @@ count that is missing or not a positive integer, are skipped.
 `test_picklists.xlsx` in the repository root is a ready-made upload, and
 `create_sample_excel.js` regenerates it.
 
+Re-uploading is safe. A picklist that is still active is left untouched rather
+than reset. A picklist number that has already been confirmed is reported back
+by name as skipped, because `picklist_no` is the primary key and a number that
+has moved into history cannot start a second run.
+
 ### Download (confirmation batch)
 
 Exactly six columns, one row per confirmed picklist, times rendered in IST:
@@ -262,6 +271,7 @@ generators still work:
 │   ├── js/common.js                # fetch wrapper
 │   ├── js/html5-qrcode.min.js      # vendored camera decoder
 │   └── css/styles.css
+├── confirmations/                  # generated batches (git-ignored)
 ├── tests/                          # engine, API integration, persistence
 ├── outboundprompt.md               # original build specification
 ├── create_sample_excel.js          # regenerates test_picklists.xlsx
@@ -284,6 +294,8 @@ generators still work:
 | `GET` | `/api/confirmation/config` | Confirmation time and pending count |
 | `POST` | `/api/confirmation/config` | Set confirmation time (`HH:mm`, 24-hour) |
 | `POST` | `/api/confirmation/generate` | Generate a batch now; responds with the `.xlsx` |
+| `GET` | `/api/confirmation/batches` | Every batch generated so far, newest first |
+| `GET` | `/api/confirmation/download/:batchId` | Re-download a batch's spreadsheet |
 | `GET` | `/api/history` | Confirmed picklists |
 
 `POST /api/scan` accepts either a raw QR string or pre-parsed fields, plus the
@@ -317,6 +329,7 @@ written.
 | `picklists` | One row per picklist: line count, picking/packing status, the four event timestamps, and `confirmation_status` (`PENDING` → `CONFIRMED`) with its date. |
 | `scan_events` | Append-only log of every scan, accepted **and** rejected, with the event type, IST timestamp and rejection reason. |
 | `config` | Key/value settings; currently `confirmation_time` (default `17:00`). |
+| `confirmation_batches` | One row per generated batch: file name and path, whether it was `MANUAL` or `AUTOMATIC`, the picklist count and the timestamp. |
 
 Timestamps are stored as IST ISO strings with a `+05:30` offset, not UTC.
 
@@ -396,11 +409,14 @@ The database already contains completed picklists from an earlier run. Run
 This is a prototype built as an internship project. Known gaps:
 
 - No authentication; anyone who can reach the server can scan or confirm.
-- The HTTPS certificate is generated in memory at startup, so it changes on every
-  restart.
 - The scheduler is an in-process timer that compares against `HH:mm`, so a batch
   is missed if the server is down at the configured minute; it does not catch up
   on the next start.
+- Picklist numbers cannot be re-used once confirmed, since `picklist_no` is the
+  primary key and the same row serves as the history record. Supporting repeat
+  numbers would mean moving history into its own table.
+- The HTTPS certificate is generated in memory at startup, so it changes on every
+  restart and the browser warning has to be accepted again.
 - Tests share the production database, as described above.
 - `html5-qrcode` is vendored into `public/js/` rather than resolved from
   `node_modules`, since the frontend has no build step.

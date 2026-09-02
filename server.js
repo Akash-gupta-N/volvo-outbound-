@@ -6,6 +6,7 @@ const path = require('path');
 const cors = require('cors');
 const multer = require('multer');
 const os = require('os');
+const fs = require('fs');
 const selfsigned = require('selfsigned');
 const localtunnel = require('localtunnel');
 
@@ -41,36 +42,10 @@ function getLocalIPAddresses() {
 const localIPs = getLocalIPAddresses();
 const primaryIP = localIPs[0] || '127.0.0.1';
 
-const altNames = [
-  { type: 2, value: 'localhost' },
-  { type: 7, ip: '127.0.0.1' }
-];
-
-localIPs.forEach(ip => {
-  altNames.push({ type: 7, ip });
-});
-
-const attrs = [
-  { name: 'commonName', value: primaryIP },
-  { name: 'organizationName', value: 'Outbound Scanner' }
-];
-
-const pems = selfsigned.generate(attrs, {
-  days: 365,
-  keySize: 2048,
-  algorithm: 'sha256',
-  extensions: [{ name: 'subjectAltName', altNames }]
-});
-
 const httpServer = http.createServer(app);
-const httpsServer = https.createServer({
-  key: pems.private,
-  cert: pems.cert
-}, app);
 
 const io = new Server();
 io.attach(httpServer);
-io.attach(httpsServer);
 
 const scheduler = new SchedulerService(repository, io);
 scheduler.start();
@@ -115,25 +90,45 @@ app.post('/api/picklists/upload', upload.single('excelFile'), async (req, res) =
     }
 
     let addedCount = 0;
-    let existingCount = 0;
+    let activeCount = 0;
+    const confirmedNos = [];
 
     for (const item of items) {
       const existing = await repository.getPicklistByNo(item.picklistNo);
-      if (existing) {
-        existingCount++;
-      } else {
+
+      if (!existing) {
         await repository.saveOrUpdatePicklist(item);
         addedCount++;
+      } else if (existing.confirmationStatus === 'CONFIRMED') {
+        // picklist_no is the primary key, so a number that has been confirmed
+        // and moved into history cannot be re-used for a new run. Reporting
+        // that separately matters: these rows were previously counted as
+        // "existing preserved", which read as success, and then every scan
+        // against them was rejected for having timestamps already recorded.
+        confirmedNos.push(item.picklistNo);
+      } else {
+        activeCount++;
       }
     }
 
     io.emit('liveUpdate');
 
+    const parts = [`${addedCount} new picklists added`];
+    if (activeCount > 0) {
+      parts.push(`${activeCount} already active and left untouched`);
+    }
+    if (confirmedNos.length > 0) {
+      parts.push(`${confirmedNos.length} skipped as already confirmed (${confirmedNos.join(', ')})`);
+    }
+
     res.json({
       success: true,
-      message: `Processed ${items.length} rows: ${addedCount} new picklists added, ${existingCount} existing picklists preserved.`,
+      message: `Processed ${items.length} rows: ${parts.join(', ')}.`,
       addedCount,
-      existingCount
+      activeCount,
+      confirmedSkipped: confirmedNos,
+      // Retained so existing callers keep working.
+      existingCount: activeCount + confirmedNos.length
     });
   } catch (err) {
     console.error('Error handling Excel upload:', err);
@@ -263,6 +258,35 @@ app.post('/api/confirmation/generate', async (req, res) => {
   }
 });
 
+app.get('/api/confirmation/batches', async (req, res) => {
+  try {
+    const batches = await repository.getConfirmationBatches();
+    res.json({ success: true, batches });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Scheduled batches have no response to stream into, so this is the only way to
+// retrieve a spreadsheet the scheduler produced overnight.
+app.get('/api/confirmation/download/:batchId', async (req, res) => {
+  try {
+    const batch = await repository.getConfirmationBatchById(req.params.batchId);
+    if (!batch) {
+      return res.status(404).json({ success: false, message: 'Confirmation batch not found.' });
+    }
+    if (!fs.existsSync(batch.filePath)) {
+      return res.status(410).json({
+        success: false,
+        message: `Batch ${batch.batchId} is recorded but its file is missing from disk.`
+      });
+    }
+    res.download(batch.filePath, batch.fileName);
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 app.get('/api/history', async (req, res) => {
   try {
     const history = await repository.getHistoryRecords();
@@ -275,6 +299,54 @@ app.get('/api/history', async (req, res) => {
 const HTTP_PORT = 3000;
 const HTTPS_PORT = 3001;
 const HOST = '0.0.0.0';
+
+/**
+ * Starts the HTTPS listener that the phone scanner needs.
+ *
+ * Phone browsers only expose getUserMedia in a secure context, so the camera
+ * cannot run against the plain HTTP listener.
+ *
+ * selfsigned v5 returns a promise. Reading .private/.cert straight off it
+ * yields undefined, which builds a listener that accepts TCP connections and
+ * then fails every TLS handshake with "sslv3 alert handshake failure" - the
+ * port looks open while nothing can actually connect.
+ */
+async function startHttpsServer() {
+  const altNames = [
+    { type: 2, value: 'localhost' },
+    { type: 7, ip: '127.0.0.1' },
+    ...localIPs.map(ip => ({ type: 7, ip }))
+  ];
+
+  const attrs = [
+    { name: 'commonName', value: primaryIP },
+    { name: 'organizationName', value: 'Outbound Scanner' }
+  ];
+
+  // Browsers ignore commonName and match the hostname against
+  // subjectAltName, so every address a phone might use is listed there.
+  const pems = await selfsigned.generate(attrs, {
+    days: 365,
+    keySize: 2048,
+    algorithm: 'sha256',
+    extensions: [{ name: 'subjectAltName', altNames }]
+  });
+
+  const httpsServer = https.createServer({
+    key: pems.private,
+    cert: pems.cert
+  }, app);
+
+  io.attach(httpsServer);
+
+  await new Promise((resolve, reject) => {
+    httpsServer.once('error', reject);
+    httpsServer.listen(HTTPS_PORT, HOST, resolve);
+  });
+
+  console.log(` Phone Scanner (HTTPS Local) : https://${primaryIP}:${HTTPS_PORT}/operator.html`);
+  return httpsServer;
+}
 
 httpServer.listen(HTTP_PORT, HOST, () => {
   console.log(`================================================================`);
@@ -298,4 +370,9 @@ httpServer.listen(HTTP_PORT, HOST, () => {
     });
 });
 
-httpsServer.listen(HTTPS_PORT, HOST);
+// The HTTP listener stays up even if certificate generation fails, so a broken
+// HTTPS setup degrades to "camera unavailable" rather than taking down the app.
+startHttpsServer().catch(err => {
+  console.error(' [HTTPS] Could not start the camera server:', err.message);
+  console.error(' [HTTPS] Use the public tunnel URL for phone scanning instead.');
+});

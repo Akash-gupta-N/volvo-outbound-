@@ -125,6 +125,44 @@ async function runTests() {
   assert(history.find(h => h.picklistNo === 'PL001') !== undefined, 'PL001 should be in permanent history');
   console.log(' ✅ Confirmed Picklists moved to permanent history.');
 
+  // 6. Batch persistence through the real scheduler path.
+  //
+  // Test 5 above calls generateConfirmationExcel and confirmPicklists directly,
+  // which is how a bug hid here: runConfirmationBatch returned the spreadsheet
+  // as a buffer and the scheduled caller discarded it, so an automatic batch
+  // confirmed picklists and left no retrievable file behind.
+  console.log('\n[Test 6] Testing confirmation batch persistence...');
+  const SchedulerService = require('../src/services/schedulerService');
+  const scheduler = new SchedulerService(repo, null);
+
+  for (const eventType of ['PICKING_START', 'PICKING_END', 'PACKING_START', 'PACKING_END']) {
+    const res = await engine.processScan({ qrPayload: { picklistNo: 'PL002', lines: 8, eventType } });
+    assert.strictEqual(res.success, true, `PL002 ${eventType} should be accepted`);
+  }
+
+  const batchResult = await scheduler.runConfirmationBatch('AUTOMATIC');
+  assert.strictEqual(batchResult.count, 1, 'Exactly one picklist should be confirmed');
+  assert(batchResult.batch, 'A batch record should be returned');
+  assert(
+    fs.existsSync(batchResult.batch.filePath),
+    'The confirmation spreadsheet must exist on disk, not only as a buffer'
+  );
+  assert(fs.statSync(batchResult.batch.filePath).size > 0, 'Saved spreadsheet should not be empty');
+
+  const storedBatch = await repo.getConfirmationBatchById(batchResult.batch.batchId);
+  assert(storedBatch !== null, 'The batch should be retrievable by id for later download');
+  assert.strictEqual(storedBatch.triggerType, 'AUTOMATIC');
+  assert.strictEqual(storedBatch.picklistCount, 1);
+
+  const allBatches = await repo.getConfirmationBatches();
+  assert(allBatches.length >= 1, 'Batch should appear in the batch list');
+  console.log(` ✅ Batch ${storedBatch.batchId} saved to disk and retrievable (${storedBatch.fileName}).`);
+
+  // A picklist already confirmed is not exported a second time.
+  const repeatBatch = await scheduler.runConfirmationBatch('AUTOMATIC');
+  assert.strictEqual(repeatBatch.count, 0, 'Confirmed picklists should not be re-exported');
+  console.log(' ✅ Confirmed picklists are not re-exported by a later batch.');
+
   console.log('\n====================================================');
   console.log(' ALL SUITE TESTS PASSED SUCCESSFULLY! 🎉');
   console.log('====================================================');
