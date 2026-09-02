@@ -163,8 +163,13 @@ to a timestamped `outbound.db.backup-*` file and the restore command is printed.
 
 ### Windows
 
-`start_app.bat` launches the server and the tunnel keep-alive and opens the
-dashboard in one double-click, without needing make.
+Double-click `start_app.bat`. It installs dependencies if `node_modules` is
+missing, starts the server and the tunnel keep-alive, and opens the dashboard —
+no make required.
+
+A fresh clone has no `node_modules`, since dependencies are not committed. Run
+the launcher, or `npm install`, before starting the server directly; otherwise
+Node exits with `Cannot find module 'express'`.
 
 ### Public tunnel (optional)
 
