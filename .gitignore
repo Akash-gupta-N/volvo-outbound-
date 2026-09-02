@@ -1,0 +1,29 @@
+# Dependencies
+node_modules/
+
+# Runtime SQLite database (recreated by src/db/database.js on first start)
+outbound.db
+outbound.db-shm
+outbound.db-wal
+*.sqlite
+
+# Tunnel URL written at runtime
+public_url.txt
+
+# Generated confirmation spreadsheets
+Outbound_Confirmation_*.xlsx
+
+# Environment
+.env
+.env.local
+
+# Logs
+*.log
+npm-debug.log*
+
+# Editor / OS
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.swp

@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Outbound Workflow Monitoring System</title>
+  <link rel="stylesheet" href="css/styles.css">
+  <script src="/socket.io/socket.io.js"></script>
+</head>
+<body>
+
+  <!-- App Header -->
+  <header class="app-header">
+    <div class="header-title">
+      <h1>Outbound Workflow Monitoring</h1>
+      <span class="badge-tag">Supervisor Dashboard</span>
+    </div>
+    <div class="header-info">
+      <span class="ip-banner" id="local-ip-display">Phone URL: Loading...</span>
+      <span id="ist-clock" style="font-weight: 600; color: var(--accent-blue);">IST: --:--:--</span>
+    </div>
+  </header>
+
+  <!-- Navigation Tabs -->
+  <nav class="nav-tabs">
+    <button class="tab-btn active" data-tab="expected-tab">📋 Expected Picklists</button>
+    <button class="tab-btn" data-tab="live-tab">📊 Live Outbound Monitoring</button>
+    <button class="tab-btn" data-tab="qr-tab">📱 QR / Expected Scans</button>
+    <button class="tab-btn" data-tab="confirmation-tab">⏰ Confirmation</button>
+    <button class="tab-btn" data-tab="history-tab">📜 History</button>
+  </nav>
+
+  <!-- Main Content Container -->
+  <main class="main-container">
+
+    <!-- 1. EXPECTED PICKLISTS TAB -->
+    <section id="expected-tab" class="tab-content active">
+      <div class="upload-box" id="upload-box">
+        <input type="file" id="excel-file-input" accept=".xlsx, .xls" style="display: none;">
+        <div style="font-size: 2rem;">📁</div>
+        <div style="font-size: 1.1rem; font-weight: 700; margin-top: 0.5rem;">Upload Outbound Picklist Excel</div>
+        <p>Drag and drop your Excel file here, or click to browse (Requires columns: Picklist No., Lines No.)</p>
+      </div>
+
+      <div class="table-card">
+        <div class="table-header-bar">
+          <div class="table-title">Active Expected Picklists</div>
+        </div>
+        <div class="table-responsive">
+          <table>
+            <thead>
+              <tr>
+                <th>Picklist No.</th>
+                <th>Lines</th>
+                <th>Picking Status</th>
+                <th>Packing Status</th>
+                <th>Workflow Status</th>
+              </tr>
+            </thead>
+            <tbody id="expected-table-body">
+              <tr><td colspan="5" style="text-align:center;">Loading expected picklists...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- 2. LIVE OUTBOUND MONITORING TAB -->
+    <section id="live-tab" class="tab-content">
+      <div class="summary-grid">
+        <div class="summary-card">
+          <div class="card-title">Total Expected Picklists</div>
+          <div class="card-value blue" id="sum-total">0</div>
+        </div>
+        <div class="summary-card">
+          <div class="card-title">Picking In Progress</div>
+          <div class="card-value amber" id="sum-picking">0</div>
+        </div>
+        <div class="summary-card">
+          <div class="card-title">Packing In Progress</div>
+          <div class="card-value purple" id="sum-packing">0</div>
+        </div>
+        <div class="summary-card">
+          <div class="card-title">Awaiting Confirmation</div>
+          <div class="card-value green" id="sum-completed">0</div>
+        </div>
+        <div class="summary-card">
+          <div class="card-title">Last Scan Time (IST)</div>
+          <div class="card-value" id="sum-last-scan" style="font-size: 1.25rem;">—</div>
+        </div>
+      </div>
+
+      <div class="table-card">
+        <div class="table-header-bar">
+          <div class="table-title">Live Outbound Progress</div>
+        </div>
+        <div class="table-responsive">
+          <table>
+            <thead>
+              <tr>
+                <th>Picklist</th>
+                <th>Lines</th>
+                <th>Picking Status</th>
+                <th>Packing Status</th>
+                <th>Picking Start (IST)</th>
+                <th>Picking End (IST)</th>
+                <th>Packing Start (IST)</th>
+                <th>Packing End (IST)</th>
+              </tr>
+            </thead>
+            <tbody id="live-table-body">
+              <tr><td colspan="8" style="text-align:center;">Loading live monitoring...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- 3. QR / EXPECTED SCANS TAB -->
+    <section id="qr-tab" class="tab-content">
+      <div style="margin-bottom: 1.5rem; color: var(--text-muted);">
+        Every active Picklist has four event-specific QR codes generated in its row for prototype scanning & demonstration.
+      </div>
+      <div id="qr-cards-container">
+        <div style="text-align:center; padding: 2rem;">Loading QR codes...</div>
+      </div>
+    </section>
+
+    <!-- 4. CONFIRMATION TAB -->
+    <section id="confirmation-tab" class="tab-content">
+      <div class="table-card" style="padding: 2rem; max-width: 700px; margin: 0 auto;">
+        <h2 style="font-size: 1.3rem; margin-bottom: 1rem;">Outbound Confirmation Management</h2>
+        <p style="color: var(--text-muted); margin-bottom: 1.5rem;">
+          Picklists are eligible for confirmation ONLY when all four process events (Picking Start, Picking End, Packing Start, Packing End) are completed.
+        </p>
+
+        <div style="background: #0f172a; padding: 1.25rem; border-radius: var(--radius-md); border: 1px solid var(--border-color); margin-bottom: 1.5rem;">
+          <div style="font-weight: 700; margin-bottom: 0.5rem;">Automated Confirmation Schedule (IST)</div>
+          <div style="display: flex; gap: 1rem; align-items: center;">
+            <input type="time" id="conf-time-input" class="input-time" value="17:00">
+            <button class="btn btn-outline" id="save-conf-time-btn">Save Schedule Time</button>
+          </div>
+          <div style="font-size: 0.8rem; color: var(--text-muted); margin-top: 0.5rem;">
+            Automated batch triggers daily at configured IST time.
+          </div>
+        </div>
+
+        <div style="background: rgba(34, 197, 94, 0.1); border: 1px solid rgba(34, 197, 94, 0.3); padding: 1.25rem; border-radius: var(--radius-md); margin-bottom: 1.5rem;">
+          <div style="font-weight: 700; color: var(--accent-green);">Current Eligible Completed Picklists</div>
+          <div style="font-size: 2rem; font-weight: 800; color: var(--accent-green); margin: 0.25rem 0;" id="eligible-count-display">0</div>
+          <div style="font-size: 0.85rem; color: var(--text-muted);">
+            Picklists ready to be exported and moved into permanent History.
+          </div>
+        </div>
+
+        <button class="btn btn-success" id="manual-generate-btn" style="width: 100%; padding: 1rem; font-size: 1rem;">
+          📊 Generate Confirmation Excel Now
+        </button>
+      </div>
+    </section>
+
+    <!-- 5. HISTORY TAB -->
+    <section id="history-tab" class="tab-content">
+      <div class="table-card">
+        <div class="table-header-bar">
+          <div class="table-title">Confirmed Picklist History</div>
+        </div>
+        <div class="table-responsive">
+          <table>
+            <thead>
+              <tr>
+                <th>Date (IST)</th>
+                <th>Picklist No.</th>
+                <th>Lines</th>
+                <th>Picking Start (IST)</th>
+                <th>Picking End (IST)</th>
+                <th>Package Start (IST)</th>
+                <th>Package End (IST)</th>
+              </tr>
+            </thead>
+            <tbody id="history-table-body">
+              <tr><td colspan="7" style="text-align:center;">Loading history...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <script src="js/common.js"></script>
+  <script src="js/mentor.js"></script>
+</body>
+</html>

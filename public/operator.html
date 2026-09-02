@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Outbound Scanner Operator</title>
+  <link rel="stylesheet" href="css/styles.css">
+  <!-- Local self-hosted HTML5 QR Code Reader Library -->
+  <script src="js/html5-qrcode.min.js"></script>
+</head>
+<body class="operator-body">
+
+  <header class="operator-header">
+    <h2>Outbound Operator Scanner</h2>
+    <div style="font-size: 0.85rem; color: var(--accent-blue); margin-top: 0.2rem;">
+      CURRENT SCANNER: <span id="current-mode-display" style="font-weight: 800; color: #fff;">PICKING START</span>
+    </div>
+  </header>
+
+  <!-- 4 Event Selector Buttons -->
+  <div class="operator-mode-selector">
+    <button class="mode-btn active" data-mode="PICKING_START">Picking Start</button>
+    <button class="mode-btn" data-mode="PICKING_END">Picking End</button>
+    <button class="mode-btn" data-mode="PACKING_START">Packing Start</button>
+    <button class="mode-btn" data-mode="PACKING_END">Packing End</button>
+  </div>
+
+  <!-- Live Video Camera Viewfinder Box -->
+  <div class="scanner-area">
+    <div class="scanner-box">
+      <div id="reader"></div>
+    </div>
+
+    <!-- Live Scanner Action Controls -->
+    <div style="display: flex; gap: 0.5rem; width: 100%; max-width: 380px; margin-top: 1rem; flex-wrap: wrap;">
+      <button id="start-cam-btn" class="btn btn-primary" style="flex: 1; padding: 0.85rem; font-weight: 700;">
+        🎥 Open / Start Live Camera
+      </button>
+
+      <label class="btn btn-outline" style="flex: 1; padding: 0.85rem; text-align: center; cursor: pointer;">
+        🖼️ Upload / Scan Image
+        <input type="file" id="qr-input-file" accept="image/*" style="display: none;">
+      </label>
+    </div>
+
+    <!-- Manual QR Entry Fallback -->
+    <div style="width: 100%; max-width: 380px; margin-top: 0.75rem;">
+      <button id="toggle-manual-btn" class="btn btn-outline" style="width: 100%; font-size: 0.8rem; padding: 0.4rem;">
+        ⌨️ Manual QR Input / Paste
+      </button>
+      <div id="manual-input-box" style="display: none; margin-top: 0.5rem; background: var(--bg-card); padding: 0.75rem; border-radius: var(--radius-sm); border: 1px solid var(--border-color);">
+        <input type="text" id="manual-qr-text" class="input-text" placeholder="OUTBOUND|PL001|10|PICKING_START" style="width: 100%; margin-bottom: 0.5rem;">
+        <button id="submit-manual-btn" class="btn btn-success" style="width: 100%;">Submit Scan</button>
+      </div>
+    </div>
+
+    <!-- Accepted / Rejected Scan Result Card -->
+    <div id="scan-result-box" class="result-card">
+      <div id="result-title" class="result-title"></div>
+      <div id="result-details" class="result-details"></div>
+    </div>
+  </div>
+
+  <script src="js/common.js"></script>
+  <script src="js/operator.js"></script>
+</body>
+</html>
